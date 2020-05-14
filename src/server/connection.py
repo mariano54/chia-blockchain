@@ -1,8 +1,9 @@
 import logging
 import random
 import time
-from asyncio import StreamReader, StreamWriter
-from typing import Any, AsyncGenerator, Callable, Dict, List, Optional
+from typing import Any, AsyncGenerator, Callable, Dict, List, Optional, Union
+
+import aiohttp.web
 
 from src.server.outbound_message import Message, NodeType, OutboundMessage
 from src.types.peer_info import PeerInfo
@@ -28,20 +29,18 @@ class Connection:
         self,
         local_type: NodeType,
         connection_type: Optional[NodeType],
-        sr: StreamReader,
-        sw: StreamWriter,
+        ws: Union[aiohttp.ClientWebSocketResponse, aiohttp.web.WebSocketResponse],
         server_port: int,
         on_connect: OnConnectFunc,
     ):
         self.local_type = local_type
         self.connection_type = connection_type
-        self.reader = sr
-        self.writer = sw
-        socket = self.writer.get_extra_info("socket")
+        self.ws = ws
+        socket = self.get_extra_info("socket")
         self.local_host = socket.getsockname()[0]
         self.local_port = server_port
-        self.peer_host = self.writer.get_extra_info("peername")[0]
-        self.peer_port = self.writer.get_extra_info("peername")[1]
+        self.peer_host = self.get_extra_info("peername")[0]
+        self.peer_port = self.get_extra_info("peername")[1]
         self.peer_server_port: Optional[int] = None
         self.node_id = None
         self.on_connect = on_connect
@@ -52,11 +51,17 @@ class Connection:
         self.bytes_written = 0
         self.last_message_time: float = 0
 
+    def get_extra_info(self, *args, **kwargs):
+        for _ in [self.ws, self.ws._writer.transport]:
+            if hasattr(_, "get_extra_info"):
+                return _.get_extra_info(*args, **kwargs)
+        return None
+
     def get_peername(self):
-        return self.writer.get_extra_info("peername")
+        return self.get_extra_info("peername")
 
     def get_socket(self):
-        return self.writer.get_extra_info("socket")
+        return self.get_extra_info("socket")
 
     def get_peer_info(self) -> Optional[PeerInfo]:
         if not self.peer_server_port:
@@ -69,21 +74,21 @@ class Connection:
     async def send(self, message: Message):
         encoded: bytes = cbor.dumps({"f": message.function, "d": message.data})
         assert len(encoded) < (2 ** (LENGTH_BYTES * 8))
-        self.writer.write(len(encoded).to_bytes(LENGTH_BYTES, "big") + encoded)
-        await self.writer.drain()
+        await self.ws.send_bytes(len(encoded).to_bytes(LENGTH_BYTES, "big") + encoded)
         self.bytes_written += LENGTH_BYTES + len(encoded)
 
     async def read_one_message(self) -> Message:
-        size = await self.reader.readexactly(LENGTH_BYTES)
+        blob = await self.ws.receive_bytes()
+        size = blob[:LENGTH_BYTES]
         full_message_length = int.from_bytes(size, "big")
-        full_message: bytes = await self.reader.readexactly(full_message_length)
+        full_message: bytes = blob[LENGTH_BYTES : LENGTH_BYTES + full_message_length]
         full_message_loaded: Any = cbor.loads(full_message)
         self.bytes_read += LENGTH_BYTES + full_message_length
         self.last_message_time = time.time()
         return Message(full_message_loaded["f"], full_message_loaded["d"])
 
     def close(self):
-        self.writer.close()
+        self.ws.close()
 
     def __str__(self) -> str:
         if self.peer_server_port is not None:
