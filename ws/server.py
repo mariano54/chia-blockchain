@@ -4,6 +4,9 @@ import aiohttp.web
 
 
 async def async_main():
+    host = "127.0.0.1"
+    port = 8812
+
     routes = aiohttp.web.RouteTableDef()
 
     @routes.get('/')
@@ -26,7 +29,16 @@ async def async_main():
 
     app = aiohttp.web.Application()
     app.add_routes(routes)
-    await aiohttp.web._run_app(app)
+    runner = aiohttp.web.AppRunner(app)
+
+    await runner.setup()
+
+    site = aiohttp.web.TCPSite(runner, host, port)
+
+    await site.start()
+    # later: await site.stop()
+
+    await site._server.wait_closed()
 
 
 def main():
