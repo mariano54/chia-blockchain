@@ -16,7 +16,7 @@ from src.harvester import Harvester
 from src.farmer import Farmer
 from src.introducer import Introducer
 from src.timelord import Timelord
-from src.server.connection import PeerInfo
+from src.types.peer_info import PeerInfo
 from src.util.ints import uint16, uint32
 
 
