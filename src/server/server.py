@@ -279,10 +279,21 @@ class ChiaServer:
             )
         )
 
+        async def connection_to_outbound(
+            connection: Connection
+        ) -> AsyncGenerator[Tuple[Connection, OutboundMessage], None]:
+            """
+            Async generator which calls the on_connect async generator method, and yields any outbound messages.
+            """
+            for func in connection.on_connect, self._on_inbound_connect:
+                if func:
+                    async for outbound_message in func():
+                        yield connection, outbound_message
+
         # Uses a forked aiter, and calls the on_connect function to send some initial messages
         # as soon as the connection is established
         on_connect_outbound_aiter = join_aiters(
-            map_aiter(self.connection_to_outbound, handshake_finished_2, 100)
+            map_aiter(connection_to_outbound, handshake_finished_2, 100)
         )
 
         # Also uses the instance variable _outbound_aiter, which clients can use to send messages
@@ -320,17 +331,6 @@ class ChiaServer:
                     f"Cannot write to {connection}, already closed. Error {e}."
                 )
                 global_connections.close(connection, True)
-
-    async def connection_to_outbound(
-        self, connection: Connection
-    ) -> AsyncGenerator[Tuple[Connection, OutboundMessage], None]:
-        """
-        Async generator which calls the on_connect async generator method, and yields any outbound messages.
-        """
-        for func in connection.on_connect, self._on_inbound_connect:
-            if func:
-                async for outbound_message in func():
-                    yield connection, outbound_message
 
     async def expand_outbound_messages(
         self, pair: Tuple[Connection, OutboundMessage]
