@@ -328,9 +328,16 @@ class ChiaServer:
             )
         )
 
+        def add_connections(_):
+            return tuple(list(_) + [self.global_connections])
+
+        responses_plus_connections_aiter = map_aiter(add_connections, responses_aiter)
+
         # For each outbound message, replicate for each peer that we need to send to
         expanded_messages_aiter = join_aiters(
-            map_aiter(self.expand_outbound_messages, responses_aiter, 100)
+            map_aiter(
+                self.expand_outbound_messages, responses_plus_connections_aiter, 100
+            )
         )
 
         # This will run forever. Sends each message through the TCP connection, using the
@@ -355,13 +362,12 @@ class ChiaServer:
                 global_connections.close(connection, True)
 
     async def expand_outbound_messages(
-        self, pair: Tuple[Connection, OutboundMessage]
+        self, triple: Tuple[Connection, OutboundMessage, PeerConnections]
     ) -> AsyncGenerator[Tuple[Connection, Optional[Message]], None]:
         """
         Expands each of the outbound messages into it's own message.
         """
-        global_connections = self.global_connections
-        connection, outbound_message = pair
+        connection, outbound_message, global_connections = triple
 
         if connection and outbound_message.delivery_method == Delivery.RESPOND:
             if connection.connection_type == outbound_message.peer_type:
