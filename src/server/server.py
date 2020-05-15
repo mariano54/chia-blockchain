@@ -329,9 +329,11 @@ class ChiaServer:
         which also stores the type of connection (str). It is also added to the global list.
         """
         sr, sw, on_connect = swrt
-        con = Connection(self._local_type, None, sr, sw, server_port, on_connect, self.global_connections)
+        con = Connection(
+            self._local_type, None, sr, sw, server_port, on_connect, self.global_connections
+        )
 
-        self.log.info(f"Connection with {con.get_peername()} established")
+        con.log.info(f"Connection with {con.get_peername()} established")
         return con
 
     async def connection_to_outbound(
@@ -397,7 +399,7 @@ class ChiaServer:
                     [protocol_version, inbound_handshake.version],
                 )
 
-            self.log.info(
+            connection.log.info(
                 (
                     f"Handshake with {NodeType(connection.connection_type).name} {connection.get_peername()} "
                     f"{connection.node_id}"
@@ -407,7 +409,7 @@ class ChiaServer:
             # Only yield a connection if the handshake is succesful and the connection is not a duplicate.
             yield connection
         except (ProtocolError, asyncio.IncompleteReadError, OSError, Exception,) as e:
-            self.log.warning(f"{e}, handshake not completed. Connection not created.")
+            connection.log.warning(f"{e}, handshake not completed. Connection not created.")
             # Make sure to close the connection even if it's not in global connections
             connection.close()
             # Remove the conenction from global connections
@@ -427,15 +429,15 @@ class ChiaServer:
                 # Read one message at a time, forever
                 yield (connection, message)
         except asyncio.IncompleteReadError:
-            self.log.info(
+            connection.log.info(
                 f"Received EOF from {connection.get_peername()}, closing connection."
             )
         except ConnectionError:
-            self.log.warning(
+            connection.log.warning(
                 f"Connection error by peer {connection.get_peername()}, closing connection."
             )
         except ssl.SSLError as e:
-            self.log.warning(
+            connection.log.warning(
                 f"SSLError {e} in connection with peer {connection.get_peername()}."
             )
         except (
@@ -445,8 +447,8 @@ class ChiaServer:
             asyncio.TimeoutError,
         ) as e:
             tb = traceback.format_exc()
-            self.log.error(tb)
-            self.log.error(
+            connection.log.error(tb)
+            connection.log.error(
                 f"Timeout/OSError {e} in connection with peer {connection.get_peername()}, closing connection."
             )
         finally:
@@ -468,7 +470,7 @@ class ChiaServer:
                     Err.INVALID_PROTOCOL_MESSAGE, [full_message.function]
                 )
 
-            self.log.info(
+            connection.log.info(
                 f"<- {full_message.function} from peer {connection.get_peername()}"
             )
             if full_message.function == "ping":
@@ -506,7 +508,7 @@ class ChiaServer:
                 await result
         except Exception:
             tb = traceback.format_exc()
-            self.log.error(f"Error, closing connection {connection}. {tb}")
+            connection.log.error(f"Error, closing connection {connection}. {tb}")
             # TODO: Exception means peer gave us invalid information, so ban this peer.
             connection.global_connections.close(connection)
 

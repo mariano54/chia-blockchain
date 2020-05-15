@@ -12,7 +12,6 @@ from src.util.ints import uint16, uint64
 
 # Each message is prepended with LENGTH_BYTES bytes specifying the length
 LENGTH_BYTES: int = 4
-log = logging.getLogger(__name__)
 
 OnConnectFunc = Optional[Callable[[], AsyncGenerator[OutboundMessage, None]]]
 
@@ -47,13 +46,14 @@ class Connection:
         self.node_id = None
         self.on_connect = on_connect
         self.global_connections = global_connections
+        self._cached_peer_name = "/".join(str(_) for _ in self.writer.get_extra_info("peername"))
+        self.log = logging.getLogger(self.get_peername())
 
         # Connection metrics
         self.creation_time = time.time()
         self.bytes_read = 0
         self.bytes_written = 0
         self.last_message_time: float = 0
-        self._cached_peer_name = self.writer.get_extra_info("peername")
 
     def get_peername(self):
         return self._cached_peer_name
