@@ -258,13 +258,13 @@ class ChiaServer:
 
         # Reads messages one at a time from the TCP connection
         messages_aiter = join_aiters(
-            map_aiter(self.connection_to_message, handshake_finished_1, 100)
+            map_aiter(connection_to_message, handshake_finished_1, 100)
         )
 
         # Handles each message one at a time, and yields responses to send back or broadcast
         responses_aiter = join_aiters(
             map_aiter(
-                partial_func.partial_async_gen(self.handle_message, api),
+                partial_func.partial_async_gen(handle_message, api),
                 messages_aiter,
                 100,
             )
@@ -415,103 +415,6 @@ class ChiaServer:
             # Remove the conenction from global connections
             connection.global_connections.close(connection)
 
-    async def connection_to_message(
-        self, connection: Connection
-    ) -> AsyncGenerator[Tuple[Connection, Message], None]:
-        """
-        Async generator which yields complete binary messages from connections,
-        along with a streamwriter to send back responses. On EOF received, the connection
-        is removed from the global list.
-        """
-        try:
-            while not connection.reader.at_eof():
-                message = await connection.read_one_message()
-                # Read one message at a time, forever
-                yield (connection, message)
-        except asyncio.IncompleteReadError:
-            connection.log.info(
-                f"Received EOF from {connection.get_peername()}, closing connection."
-            )
-        except ConnectionError:
-            connection.log.warning(
-                f"Connection error by peer {connection.get_peername()}, closing connection."
-            )
-        except ssl.SSLError as e:
-            connection.log.warning(
-                f"SSLError {e} in connection with peer {connection.get_peername()}."
-            )
-        except (
-            concurrent.futures._base.CancelledError,
-            OSError,
-            TimeoutError,
-            asyncio.TimeoutError,
-        ) as e:
-            tb = traceback.format_exc()
-            connection.log.error(tb)
-            connection.log.error(
-                f"Timeout/OSError {e} in connection with peer {connection.get_peername()}, closing connection."
-            )
-        finally:
-            # Removes the connection from the global list, so we don't try to send things to it
-            connection.global_connections.close(connection, True)
-
-    async def handle_message(
-        self, pair: Tuple[Connection, Message], api: Any
-    ) -> AsyncGenerator[Tuple[Connection, OutboundMessage], None]:
-        """
-        Async generator which takes messages, parses, them, executes the right
-        api function, and yields responses (to same connection, propagated, etc).
-        """
-        connection, full_message = pair
-        try:
-            if len(full_message.function) == 0 or full_message.function.startswith("_"):
-                # This prevents remote calling of private methods that start with "_"
-                raise ProtocolError(
-                    Err.INVALID_PROTOCOL_MESSAGE, [full_message.function]
-                )
-
-            connection.log.info(
-                f"<- {full_message.function} from peer {connection.get_peername()}"
-            )
-            if full_message.function == "ping":
-                ping_msg = Ping(full_message.data["nonce"])
-                assert connection.connection_type
-                yield connection, OutboundMessage(
-                    connection.connection_type,
-                    Message("pong", Pong(ping_msg.nonce)),
-                    Delivery.RESPOND,
-                )
-                return
-            elif full_message.function == "pong":
-                return
-
-            f_with_peer_name = getattr(
-                api, full_message.function + "_with_peer_name", None
-            )
-
-            if f_with_peer_name is not None:
-                result = f_with_peer_name(full_message.data, connection.get_peername())
-            else:
-                f = getattr(api, full_message.function, None)
-
-                if f is None:
-                    raise ProtocolError(
-                        Err.INVALID_PROTOCOL_MESSAGE, [full_message.function]
-                    )
-
-                result = f(full_message.data)
-
-            if isinstance(result, AsyncGenerator):
-                async for outbound_message in result:
-                    yield connection, outbound_message
-            else:
-                await result
-        except Exception:
-            tb = traceback.format_exc()
-            connection.log.error(f"Error, closing connection {connection}. {tb}")
-            # TODO: Exception means peer gave us invalid information, so ban this peer.
-            connection.global_connections.close(connection)
-
     async def expand_outbound_messages(
         self, pair: Tuple[Connection, OutboundMessage]
     ) -> AsyncGenerator[Tuple[Connection, Optional[Message]], None]:
@@ -572,3 +475,102 @@ class ChiaServer:
                         and peer.node_id == outbound_message.specific_peer_node_id
                     ):
                         yield (peer, outbound_message.message)
+
+
+async def connection_to_message(
+    connection: Connection
+) -> AsyncGenerator[Tuple[Connection, Message], None]:
+    """
+    Async generator which yields complete binary messages from connections,
+    along with a streamwriter to send back responses. On EOF received, the connection
+    is removed from the global list.
+    """
+    try:
+        while not connection.reader.at_eof():
+            message = await connection.read_one_message()
+            # Read one message at a time, forever
+            yield (connection, message)
+    except asyncio.IncompleteReadError:
+        connection.log.info(
+            f"Received EOF from {connection.get_peername()}, closing connection."
+        )
+    except ConnectionError:
+        connection.log.warning(
+            f"Connection error by peer {connection.get_peername()}, closing connection."
+        )
+    except ssl.SSLError as e:
+        connection.log.warning(
+            f"SSLError {e} in connection with peer {connection.get_peername()}."
+        )
+    except (
+        concurrent.futures._base.CancelledError,
+        OSError,
+        TimeoutError,
+        asyncio.TimeoutError,
+    ) as e:
+        tb = traceback.format_exc()
+        connection.log.error(tb)
+        connection.log.error(
+            f"Timeout/OSError {e} in connection with peer {connection.get_peername()}, closing connection."
+        )
+    finally:
+        # Removes the connection from the global list, so we don't try to send things to it
+        connection.global_connections.close(connection, True)
+
+
+async def handle_message(
+    pair: Tuple[Connection, Message], api: Any
+) -> AsyncGenerator[Tuple[Connection, OutboundMessage], None]:
+    """
+    Async generator which takes messages, parses, them, executes the right
+    api function, and yields responses (to same connection, propagated, etc).
+    """
+    connection, full_message = pair
+    try:
+        if len(full_message.function) == 0 or full_message.function.startswith("_"):
+            # This prevents remote calling of private methods that start with "_"
+            raise ProtocolError(
+                Err.INVALID_PROTOCOL_MESSAGE, [full_message.function]
+            )
+
+        connection.log.info(
+            f"<- {full_message.function} from peer {connection.get_peername()}"
+        )
+        if full_message.function == "ping":
+            ping_msg = Ping(full_message.data["nonce"])
+            assert connection.connection_type
+            yield connection, OutboundMessage(
+                connection.connection_type,
+                Message("pong", Pong(ping_msg.nonce)),
+                Delivery.RESPOND,
+            )
+            return
+        elif full_message.function == "pong":
+            return
+
+        f_with_peer_name = getattr(
+            api, full_message.function + "_with_peer_name", None
+        )
+
+        if f_with_peer_name is not None:
+            result = f_with_peer_name(full_message.data, connection.get_peername())
+        else:
+            f = getattr(api, full_message.function, None)
+
+            if f is None:
+                raise ProtocolError(
+                    Err.INVALID_PROTOCOL_MESSAGE, [full_message.function]
+                )
+
+            result = f(full_message.data)
+
+        if isinstance(result, AsyncGenerator):
+            async for outbound_message in result:
+                yield connection, outbound_message
+        else:
+            await result
+    except Exception:
+        tb = traceback.format_exc()
+        connection.log.error(f"Error, closing connection {connection}. {tb}")
+        # TODO: Exception means peer gave us invalid information, so ban this peer.
+        connection.global_connections.close(connection)
