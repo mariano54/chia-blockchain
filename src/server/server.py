@@ -221,9 +221,7 @@ class ChiaServer:
 
         return asyncio.create_task(ping())
 
-    async def initialize_pipeline(
-        self, aiter, api: Any, server_port: int
-    ):
+    async def initialize_pipeline(self, aiter, api: Any, server_port: int):
         """
         A pipeline that starts with (StreamReader, StreamWriter), maps it though to
         connections, messages, executes a local API call, and returns responses.
@@ -281,7 +279,7 @@ class ChiaServer:
         )
 
         async def connection_to_outbound(
-            connection: Connection
+            connection: Connection,
         ) -> AsyncGenerator[Tuple[Connection, OutboundMessage], None]:
             """
             Async generator which calls the on_connect async generator method, and yields any outbound messages.
@@ -307,9 +305,14 @@ class ChiaServer:
             )
         )
 
+        def add_connections(_):
+            return tuple(list(_) + [self.global_connections])
+
+        responses_plus_connections_aiter = map_aiter(add_connections, responses_aiter)
+
         # For each outbound message, replicate for each peer that we need to send to
         expanded_messages_aiter = join_aiters(
-            map_aiter(self.expand_outbound_messages, responses_aiter, 100)
+            map_aiter(expand_outbound_messages, responses_plus_connections_aiter, 100)
         )
 
         # This will run forever. Sends each message through the TCP connection, using the
@@ -324,7 +327,9 @@ class ChiaServer:
                     f"Closing, so will not send {message.function} to peer {connection.get_peername()}"
                 )
                 continue
-            connection.log.info(f"-> {message.function} to peer {connection.get_peername()}")
+            connection.log.info(
+                f"-> {message.function} to peer {connection.get_peername()}"
+            )
             try:
                 await connection.send(message)
             except (RuntimeError, TimeoutError, OSError,) as e:
@@ -332,68 +337,6 @@ class ChiaServer:
                     f"Cannot write to {connection}, already closed. Error {e}."
                 )
                 global_connections.close(connection, True)
-
-    async def expand_outbound_messages(
-        self, pair: Tuple[Connection, OutboundMessage]
-    ) -> AsyncGenerator[Tuple[Connection, Optional[Message]], None]:
-        """
-        Expands each of the outbound messages into it's own message.
-        """
-        global_connections = self.global_connections
-        connection, outbound_message = pair
-
-        if connection and outbound_message.delivery_method == Delivery.RESPOND:
-            if connection.connection_type == outbound_message.peer_type:
-                # Only select this peer, and only if it's the right type
-                yield connection, outbound_message.message
-        elif outbound_message.delivery_method == Delivery.RANDOM:
-            # Select a random peer.
-            to_yield_single: Tuple[Connection, Message]
-            typed_peers: List[Connection] = [
-                peer
-                for peer in global_connections.get_connections()
-                if peer.connection_type == outbound_message.peer_type
-            ]
-            if len(typed_peers) == 0:
-                return
-            yield (random.choice(typed_peers), outbound_message.message)
-        elif (
-            outbound_message.delivery_method == Delivery.BROADCAST
-            or outbound_message.delivery_method == Delivery.BROADCAST_TO_OTHERS
-        ):
-            # Broadcast to all peers.
-            for peer in global_connections.get_connections():
-                if peer.connection_type == outbound_message.peer_type:
-                    if peer == connection:
-                        if outbound_message.delivery_method == Delivery.BROADCAST:
-                            yield (peer, outbound_message.message)
-                    else:
-                        yield (peer, outbound_message.message)
-
-        elif outbound_message.delivery_method == Delivery.SPECIFIC:
-            # Send to a specific peer, by node_id, assuming the NodeType matches.
-            if outbound_message.specific_peer_node_id is None:
-                return
-            for peer in global_connections.get_connections():
-                if (
-                    peer.connection_type == outbound_message.peer_type
-                    and peer.node_id == outbound_message.specific_peer_node_id
-                ):
-                    yield (peer, outbound_message.message)
-
-        elif outbound_message.delivery_method == Delivery.CLOSE:
-            if outbound_message.specific_peer_node_id is None:
-                # Close the connection but don't ban the peer
-                if connection.connection_type == outbound_message.peer_type:
-                    yield (connection, None)
-            else:
-                for peer in global_connections.get_connections():
-                    # Close the connection with the specific peer
-                    if (
-                        peer.connection_type == outbound_message.peer_type
-                        and peer.node_id == outbound_message.specific_peer_node_id
-                    ):
-                        yield (peer, outbound_message.message)
 
 
 async def stream_reader_writer_to_connection(
@@ -576,3 +519,65 @@ async def perform_handshake(
         connection.close()
         # Remove the conenction from global connections
         connection.global_connections.close(connection)
+
+
+async def expand_outbound_messages(
+    triple: Tuple[Connection, OutboundMessage, PeerConnections]
+) -> AsyncGenerator[Tuple[Connection, Optional[Message]], None]:
+    """
+    Expands each of the outbound messages into it's own message.
+    """
+    connection, outbound_message, global_connections = triple
+
+    if connection and outbound_message.delivery_method == Delivery.RESPOND:
+        if connection.connection_type == outbound_message.peer_type:
+            # Only select this peer, and only if it's the right type
+            yield connection, outbound_message.message
+    elif outbound_message.delivery_method == Delivery.RANDOM:
+        # Select a random peer.
+        to_yield_single: Tuple[Connection, Message]
+        typed_peers: List[Connection] = [
+            peer
+            for peer in global_connections.get_connections()
+            if peer.connection_type == outbound_message.peer_type
+        ]
+        if len(typed_peers) == 0:
+            return
+        yield (random.choice(typed_peers), outbound_message.message)
+    elif (
+        outbound_message.delivery_method == Delivery.BROADCAST
+        or outbound_message.delivery_method == Delivery.BROADCAST_TO_OTHERS
+    ):
+        # Broadcast to all peers.
+        for peer in global_connections.get_connections():
+            if peer.connection_type == outbound_message.peer_type:
+                if peer == connection:
+                    if outbound_message.delivery_method == Delivery.BROADCAST:
+                        yield (peer, outbound_message.message)
+                else:
+                    yield (peer, outbound_message.message)
+
+    elif outbound_message.delivery_method == Delivery.SPECIFIC:
+        # Send to a specific peer, by node_id, assuming the NodeType matches.
+        if outbound_message.specific_peer_node_id is None:
+            return
+        for peer in global_connections.get_connections():
+            if (
+                peer.connection_type == outbound_message.peer_type
+                and peer.node_id == outbound_message.specific_peer_node_id
+            ):
+                yield (peer, outbound_message.message)
+
+    elif outbound_message.delivery_method == Delivery.CLOSE:
+        if outbound_message.specific_peer_node_id is None:
+            # Close the connection but don't ban the peer
+            if connection.connection_type == outbound_message.peer_type:
+                yield (connection, None)
+        else:
+            for peer in global_connections.get_connections():
+                # Close the connection with the specific peer
+                if (
+                    peer.connection_type == outbound_message.peer_type
+                    and peer.node_id == outbound_message.specific_peer_node_id
+                ):
+                    yield (peer, outbound_message.message)
