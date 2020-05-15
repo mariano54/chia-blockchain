@@ -315,7 +315,7 @@ class ChiaServer:
         which also stores the type of connection (str). It is also added to the global list.
         """
         sr, sw, on_connect = swrt
-        con = Connection(self._local_type, None, sr, sw, server_port, on_connect)
+        con = Connection(self._local_type, None, sr, sw, server_port, on_connect, self.global_connections)
 
         self.log.info(f"Connection with {con.get_peername()} established")
         return con
@@ -375,7 +375,7 @@ class ChiaServer:
             if self._srwt_aiter.is_stopped():
                 raise Exception("No longer accepting handshakes, closing.")
 
-            if not self.global_connections.add(connection):
+            if not connection.global_connections.add(connection):
                 raise ProtocolError(Err.DUPLICATE_CONNECTION, [False])
 
             # Send Ack message
@@ -406,7 +406,7 @@ class ChiaServer:
             # Make sure to close the connection even if it's not in global connections
             connection.close()
             # Remove the conenction from global connections
-            self.global_connections.close(connection)
+            connection.global_connections.close(connection)
 
     async def connection_to_message(
         self, connection: Connection
@@ -446,7 +446,7 @@ class ChiaServer:
             )
         finally:
             # Removes the connection from the global list, so we don't try to send things to it
-            self.global_connections.close(connection, True)
+            connection.global_connections.close(connection, True)
 
     async def handle_message(
         self, pair: Tuple[Connection, Message], api: Any
@@ -503,7 +503,7 @@ class ChiaServer:
             tb = traceback.format_exc()
             self.log.error(f"Error, closing connection {connection}. {tb}")
             # TODO: Exception means peer gave us invalid information, so ban this peer.
-            self.global_connections.close(connection)
+            connection.global_connections.close(connection)
 
     async def expand_outbound_messages(
         self, pair: Tuple[Connection, OutboundMessage]
