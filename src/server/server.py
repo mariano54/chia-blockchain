@@ -246,11 +246,11 @@ class ChiaServer:
             ),
         )
         connection_handshake_aiter = map_aiter(
-            lambda _: (_, outbound_handshake), connections_aiter)
+            lambda _: (_, outbound_handshake, self._srwt_aiter), connections_aiter)
 
         # Performs a handshake with the peer
         handshaked_connections_aiter = join_aiters(
-            map_aiter(self.perform_handshake, connection_handshake_aiter)
+            map_aiter(perform_handshake, connection_handshake_aiter)
         )
         forker = aiter_forker(handshaked_connections_aiter)
         handshake_finished_1 = forker.fork(is_active=True)
@@ -346,74 +346,6 @@ class ChiaServer:
             if func:
                 async for outbound_message in func():
                     yield connection, outbound_message
-
-    async def perform_handshake(
-        self,
-        pair: Tuple[Connection, Message],
-    ) -> AsyncGenerator[Connection, None]:
-        """
-        Performs handshake with this new connection, and yields the connection. If the handshake
-        is unsuccessful, or we already have a connection with this peer, the connection is closed,
-        and nothing is yielded.
-        """
-        connection, outbound_handshake = pair
-        # Send handshake message
-        try:
-            await connection.send(outbound_handshake)
-
-            # Read handshake message
-            full_message = await connection.read_one_message()
-            inbound_handshake = Handshake(**full_message.data)
-            if (
-                full_message.function != "handshake"
-                or not inbound_handshake
-                or not inbound_handshake.node_type
-            ):
-                raise ProtocolError(Err.INVALID_HANDSHAKE)
-
-            if inbound_handshake.node_id == self._node_id:
-                raise ProtocolError(Err.SELF_CONNECTION)
-
-            # Makes sure that we only start one connection with each peer
-            connection.node_id = inbound_handshake.node_id
-            connection.peer_server_port = int(inbound_handshake.server_port)
-            connection.connection_type = inbound_handshake.node_type
-
-            if self._srwt_aiter.is_stopped():
-                raise Exception("No longer accepting handshakes, closing.")
-
-            if not connection.global_connections.add(connection):
-                raise ProtocolError(Err.DUPLICATE_CONNECTION, [False])
-
-            # Send Ack message
-            await connection.send(Message("handshake_ack", HandshakeAck()))
-
-            # Read Ack message
-            full_message = await connection.read_one_message()
-            if full_message.function != "handshake_ack":
-                raise ProtocolError(Err.INVALID_ACK)
-
-            if inbound_handshake.version != protocol_version:
-                raise ProtocolError(
-                    Err.INCOMPATIBLE_PROTOCOL_VERSION,
-                    [protocol_version, inbound_handshake.version],
-                )
-
-            connection.log.info(
-                (
-                    f"Handshake with {NodeType(connection.connection_type).name} {connection.get_peername()} "
-                    f"{connection.node_id}"
-                    f" established"
-                )
-            )
-            # Only yield a connection if the handshake is succesful and the connection is not a duplicate.
-            yield connection
-        except (ProtocolError, asyncio.IncompleteReadError, OSError, Exception,) as e:
-            connection.log.warning(f"{e}, handshake not completed. Connection not created.")
-            # Make sure to close the connection even if it's not in global connections
-            connection.close()
-            # Remove the conenction from global connections
-            connection.global_connections.close(connection)
 
     async def expand_outbound_messages(
         self, pair: Tuple[Connection, OutboundMessage]
@@ -573,4 +505,72 @@ async def handle_message(
         tb = traceback.format_exc()
         connection.log.error(f"Error, closing connection {connection}. {tb}")
         # TODO: Exception means peer gave us invalid information, so ban this peer.
+        connection.global_connections.close(connection)
+
+
+async def perform_handshake(
+    items: Tuple[Connection, Message, push_aiter],
+) -> AsyncGenerator[Connection, None]:
+    """
+    Performs handshake with this new connection, and yields the connection. If the handshake
+    is unsuccessful, or we already have a connection with this peer, the connection is closed,
+    and nothing is yielded.
+    """
+    connection, outbound_handshake, srwt_aiter = items
+    # Send handshake message
+    try:
+        await connection.send(outbound_handshake)
+
+        # Read handshake message
+        full_message = await connection.read_one_message()
+        inbound_handshake = Handshake(**full_message.data)
+        if (
+            full_message.function != "handshake"
+            or not inbound_handshake
+            or not inbound_handshake.node_type
+        ):
+            raise ProtocolError(Err.INVALID_HANDSHAKE)
+
+        if inbound_handshake.node_id == outbound_handshake.data.node_id:
+            raise ProtocolError(Err.SELF_CONNECTION)
+
+        # Makes sure that we only start one connection with each peer
+        connection.node_id = inbound_handshake.node_id
+        connection.peer_server_port = int(inbound_handshake.server_port)
+        connection.connection_type = inbound_handshake.node_type
+
+        if srwt_aiter.is_stopped():
+            raise Exception("No longer accepting handshakes, closing.")
+
+        if not connection.global_connections.add(connection):
+            raise ProtocolError(Err.DUPLICATE_CONNECTION, [False])
+
+        # Send Ack message
+        await connection.send(Message("handshake_ack", HandshakeAck()))
+
+        # Read Ack message
+        full_message = await connection.read_one_message()
+        if full_message.function != "handshake_ack":
+            raise ProtocolError(Err.INVALID_ACK)
+
+        if inbound_handshake.version != protocol_version:
+            raise ProtocolError(
+                Err.INCOMPATIBLE_PROTOCOL_VERSION,
+                [protocol_version, inbound_handshake.version],
+            )
+
+        connection.log.info(
+            (
+                f"Handshake with {NodeType(connection.connection_type).name} {connection.get_peername()} "
+                f"{connection.node_id}"
+                f" established"
+            )
+        )
+        # Only yield a connection if the handshake is succesful and the connection is not a duplicate.
+        yield connection
+    except (ProtocolError, asyncio.IncompleteReadError, OSError, Exception,) as e:
+        connection.log.warning(f"{e}, handshake not completed. Connection not created.")
+        # Make sure to close the connection even if it's not in global connections
+        connection.close()
+        # Remove the conenction from global connections
         connection.global_connections.close(connection)
