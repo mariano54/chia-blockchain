@@ -10,6 +10,7 @@ except ImportError:
 from src.farmer import Farmer
 from src.server.outbound_message import NodeType
 from src.server.server import ChiaServer
+from src.server.ssl_context import ssl_context_for_client, ssl_context_for_server
 from src.util.config import load_config, load_config_cli
 from src.util.default_root import DEFAULT_ROOT_PATH
 from src.cmds.init import check_keys
@@ -37,14 +38,16 @@ async def async_main():
     network_id = net_config.get("network_id")
     assert ping_interval is not None
     assert network_id is not None
+    ssl_context_client = ssl_context_for_client(root_path, config, auth=False)
+    ssl_context_server = ssl_context_for_server(root_path, config, NodeType.FARMER)
     server = ChiaServer(
         config["port"],
         farmer,
         NodeType.FARMER,
         ping_interval,
         network_id,
-        root_path,
-        config,
+        ssl_context_client,
+        ssl_context_server,
     )
 
     try:

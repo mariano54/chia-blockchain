@@ -12,6 +12,7 @@ except ImportError:
 
 from src.rpc.rpc_server import start_rpc_server
 from src.server.server import ChiaServer
+from src.server.ssl_context import ssl_context_for_server
 from src.server.connection import NodeType
 from src.util.logging import initialize_logging
 from src.util.config import load_config_cli, load_config
@@ -44,14 +45,14 @@ async def main():
     # Starts the full node server (which full nodes can connect to)
     assert ping_interval is not None
     assert network_id is not None
+    ssl_context = ssl_context_for_server(root_path, config, NodeType.FULL_NODE)
     server = ChiaServer(
         config["port"],
         full_node,
         NodeType.FULL_NODE,
         ping_interval,
         network_id,
-        DEFAULT_ROOT_PATH,
-        config,
+        ssl_context,
     )
     full_node._set_server(server)
     _ = await server.start_server(full_node._on_connect)

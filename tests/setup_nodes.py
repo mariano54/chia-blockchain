@@ -5,6 +5,7 @@ import blspy
 from src.full_node.full_node import FullNode
 from src.server.connection import NodeType
 from src.server.server import ChiaServer
+from src.server.ssl_context import ssl_context_for_client, ssl_context_for_server
 from src.simulator.full_node_simulator import FullNodeSimulator
 from src.timelord_launcher import spawn_process, kill_processes
 from src.wallet.wallet_node import WalletNode
@@ -79,14 +80,16 @@ async def setup_full_node_simulator(db_name, port, introducer_port=None, dic={})
     )
     assert ping_interval is not None
     assert network_id is not None
+    ssl_context_client = ssl_context_for_client(bt.root_path, config, auth=False)
+    ssl_context_server = ssl_context_for_server(bt.root_path, config, NodeType.FULL_NODE)
     server_1 = ChiaServer(
         port,
         full_node_1,
         NodeType.FULL_NODE,
         ping_interval,
         network_id,
-        bt.root_path,
-        config,
+        ssl_context_client,
+        ssl_context_server,
         "full-node-simulator-server",
     )
     _ = await server_1.start_server(full_node_1._on_connect)
@@ -130,14 +133,16 @@ async def setup_full_node(db_name, port, introducer_port=None, dic={}):
     )
     assert ping_interval is not None
     assert network_id is not None
+    ssl_context_client = ssl_context_for_client(bt.root_path, config, auth=False)
+    ssl_context_server = ssl_context_for_server(bt.root_path, config, NodeType.FULL_NODE)
     server_1 = ChiaServer(
         port,
         full_node_1,
         NodeType.FULL_NODE,
         ping_interval,
         network_id,
-        root_path,
-        config,
+        ssl_context_client,
+        ssl_context_server,
         f"full_node_server_{port}",
     )
     _ = await server_1.start_server(full_node_1._on_connect)
@@ -179,14 +184,16 @@ async def setup_wallet_node(port, introducer_port=None, key_seed=b"", dic={}):
     )
     assert ping_interval is not None
     assert network_id is not None
+    ssl_context_client = ssl_context_for_client(bt.root_path, config, auth=False)
+    ssl_context_server = ssl_context_for_server(bt.root_path, config, NodeType.WALLET)
     server = ChiaServer(
         port,
         wallet,
         NodeType.WALLET,
         ping_interval,
         network_id,
-        root_path,
-        config,
+        ssl_context_client,
+        ssl_context_server,
         "wallet-server",
     )
     wallet.set_server(server)
@@ -210,15 +217,17 @@ async def setup_harvester(port, dic={}):
     network_id = net_config.get("network_id")
     assert ping_interval is not None
     assert network_id is not None
+    ssl_context_client = ssl_context_for_client(root_path, config, auth=True)
+    ssl_context_server = ssl_context_for_server(root_path, config, NodeType.HARVESTER)
     server = ChiaServer(
         port,
         harvester,
         NodeType.HARVESTER,
         ping_interval,
         network_id,
-        root_path,
-        config,
-        f"harvester_server_{port}",
+        ssl_context_client,
+        ssl_context_server,
+        name=f"harvester_server_{port}",
     )
 
     harvester.set_server(server)
@@ -260,14 +269,16 @@ async def setup_farmer(port, dic={}):
     farmer = Farmer(config, key_config, test_constants_copy)
     assert ping_interval is not None
     assert network_id is not None
+    ssl_context_client = ssl_context_for_client(root_path, config, auth=False)
+    ssl_context_server = ssl_context_for_server(root_path, config, NodeType.FARMER)
     server = ChiaServer(
         port,
         farmer,
         NodeType.FARMER,
         ping_interval,
         network_id,
-        root_path,
-        config,
+        ssl_context_client,
+        ssl_context_server,
         f"farmer_server_{port}",
     )
     _ = await server.start_server(farmer._on_connect)
@@ -288,14 +299,16 @@ async def setup_introducer(port, dic={}):
     introducer = Introducer(config)
     assert ping_interval is not None
     assert network_id is not None
+    ssl_context_client = ssl_context_for_client(bt.root_path, config, auth=False)
+    ssl_context_server = ssl_context_for_server(bt.root_path, config, NodeType.INTRODUCER)
     server = ChiaServer(
         port,
         introducer,
         NodeType.INTRODUCER,
         ping_interval,
         network_id,
-        bt.root_path,
-        config,
+        ssl_context_client,
+        ssl_context_server,
         f"introducer_server_{port}",
     )
     _ = await server.start_server(None)
@@ -327,14 +340,16 @@ async def setup_timelord(port, dic={}):
     network_id = net_config.get("network_id")
     assert ping_interval is not None
     assert network_id is not None
+    ssl_context_client = ssl_context_for_client(bt.root_path, config, auth=False)
+    ssl_context_server = ssl_context_for_server(bt.root_path, config, NodeType.TIMELORD)
     server = ChiaServer(
         port,
         timelord,
         NodeType.TIMELORD,
         ping_interval,
         network_id,
-        bt.root_path,
-        config,
+        ssl_context_client,
+        ssl_context_server,
         f"timelord_server_{port}",
     )
 

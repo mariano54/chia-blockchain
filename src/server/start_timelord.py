@@ -12,6 +12,7 @@ except ImportError:
 
 from src.server.outbound_message import NodeType
 from src.server.server import ChiaServer
+from src.server.ssl_context import ssl_context_for_server
 from src.timelord import Timelord
 from src.util.config import load_config_cli, load_config
 from src.util.default_root import DEFAULT_ROOT_PATH
@@ -32,14 +33,14 @@ async def async_main():
     network_id = net_config.get("network_id")
     assert ping_interval is not None
     assert network_id is not None
+    ssl_context = ssl_context_for_server(root_path, config, NodeType.TIMELORD)
     server = ChiaServer(
         config["port"],
         timelord,
         NodeType.TIMELORD,
         ping_interval,
         network_id,
-        DEFAULT_ROOT_PATH,
-        config,
+        ssl_context,
     )
 
     timelord_shutdown_task: Optional[asyncio.Task] = None

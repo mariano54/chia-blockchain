@@ -10,6 +10,7 @@ except ImportError:
 from src.harvester import Harvester
 from src.server.outbound_message import NodeType
 from src.server.server import ChiaServer
+from src.server.ssl_context import ssl_context_for_server
 from src.util.config import load_config, load_config_cli
 from src.util.default_root import DEFAULT_ROOT_PATH
 from src.util.logging import initialize_logging
@@ -34,14 +35,14 @@ async def async_main():
     network_id = net_config.get("network_id")
     assert ping_interval is not None
     assert network_id is not None
+    ssl_context = ssl_context_for_server(root_path, config, NodeType.HARVESTER)
     server = ChiaServer(
         config["port"],
         harvester,
         NodeType.HARVESTER,
         ping_interval,
         network_id,
-        DEFAULT_ROOT_PATH,
-        config,
+        ssl_context,
     )
 
     try:

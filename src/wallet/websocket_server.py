@@ -22,6 +22,7 @@ except ImportError:
 
 from src.server.outbound_message import NodeType, OutboundMessage, Message, Delivery
 from src.server.server import ChiaServer
+from src.server.ssl_context import ssl_context_for_client, ssl_context_for_server
 from src.simulator.simulator_constants import test_constants
 from src.simulator.simulator_protocol import FarmNewBlockProtocol
 from src.util.config import load_config_cli, load_config
@@ -609,14 +610,16 @@ async def start_websocket_server():
     assert network_id is not None
 
     log.info(f"Starting wallet server on port {config['port']}.")
+    ssl_context_client = ssl_context_for_client(root_path, config, auth=False)
+    ssl_context_server = ssl_context_for_server(root_path, config, NodeType.WALLET)
     server = ChiaServer(
         config["port"],
         wallet_node,
         NodeType.WALLET,
         ping_interval,
         network_id,
-        DEFAULT_ROOT_PATH,
-        config,
+        ssl_context_client,
+        ssl_context_server,
     )
     wallet_node.set_server(server)
 
