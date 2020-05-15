@@ -235,6 +235,7 @@ class ChiaServer:
         local_type = self._local_type
         srwt_aiter = self._srwt_aiter
         outbound_aiter = self._outbound_aiter
+        on_inbound_connect = self._on_inbound_connect
 
         # Maps a stream reader, writer and NodeType to a Connection object
         connections_aiter = map_aiter(
@@ -285,7 +286,7 @@ class ChiaServer:
             """
             Async generator which calls the on_connect async generator method, and yields any outbound messages.
             """
-            for func in connection.on_connect, self._on_inbound_connect:
+            for func in connection.on_connect, on_inbound_connect:
                 if func:
                     async for outbound_message in func():
                         yield connection, outbound_message
@@ -319,15 +320,15 @@ class ChiaServer:
                 global_connections.close(connection, True)
                 continue
             if connection.is_closing():
-                self.log.info(
+                connection.log.info(
                     f"Closing, so will not send {message.function} to peer {connection.get_peername()}"
                 )
                 continue
-            self.log.info(f"-> {message.function} to peer {connection.get_peername()}")
+            connection.log.info(f"-> {message.function} to peer {connection.get_peername()}")
             try:
                 await connection.send(message)
             except (RuntimeError, TimeoutError, OSError,) as e:
-                self.log.warning(
+                connection.log.warning(
                     f"Cannot write to {connection}, already closed. Error {e}."
                 )
                 global_connections.close(connection, True)
@@ -338,6 +339,7 @@ class ChiaServer:
         """
         Expands each of the outbound messages into it's own message.
         """
+        global_connections = self.global_connections
         connection, outbound_message = pair
 
         if connection and outbound_message.delivery_method == Delivery.RESPOND:
@@ -349,7 +351,7 @@ class ChiaServer:
             to_yield_single: Tuple[Connection, Message]
             typed_peers: List[Connection] = [
                 peer
-                for peer in self.global_connections.get_connections()
+                for peer in global_connections.get_connections()
                 if peer.connection_type == outbound_message.peer_type
             ]
             if len(typed_peers) == 0:
@@ -360,7 +362,7 @@ class ChiaServer:
             or outbound_message.delivery_method == Delivery.BROADCAST_TO_OTHERS
         ):
             # Broadcast to all peers.
-            for peer in self.global_connections.get_connections():
+            for peer in global_connections.get_connections():
                 if peer.connection_type == outbound_message.peer_type:
                     if peer == connection:
                         if outbound_message.delivery_method == Delivery.BROADCAST:
@@ -372,7 +374,7 @@ class ChiaServer:
             # Send to a specific peer, by node_id, assuming the NodeType matches.
             if outbound_message.specific_peer_node_id is None:
                 return
-            for peer in self.global_connections.get_connections():
+            for peer in global_connections.get_connections():
                 if (
                     peer.connection_type == outbound_message.peer_type
                     and peer.node_id == outbound_message.specific_peer_node_id
@@ -385,7 +387,7 @@ class ChiaServer:
                 if connection.connection_type == outbound_message.peer_type:
                     yield (connection, None)
             else:
-                for peer in self.global_connections.get_connections():
+                for peer in global_connections.get_connections():
                     # Close the connection with the specific peer
                     if (
                         peer.connection_type == outbound_message.peer_type
