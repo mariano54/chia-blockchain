@@ -61,6 +61,9 @@ class ChiaServer:
         # Aiter used to broadcase messages
         self._outbound_aiter: push_aiter = push_aiter()
 
+        # Our unique random node id that we will other peers, regenerated on launch
+        self._node_id = create_node_id()
+
         # Tasks for entire server pipeline
         self._pipeline_task: asyncio.Task = self.initialize_pipeline(
             self._srwt_aiter, self._api, self._port
@@ -68,9 +71,6 @@ class ChiaServer:
 
         self._ssl_context_client = ssl_context_client
         self._ssl_context_server = ssl_context_server
-
-        # Our unique random node id that we will other peers, regenerated on launch
-        self._node_id = create_node_id()
 
         # Taks list to keep references to tasks, so they don'y get GCd
         self._tasks: List[asyncio.Task] = [self._initialize_ping_task()]
@@ -234,9 +234,23 @@ class ChiaServer:
             ),
             aiter,
         )
+
+        outbound_handshake = Message(
+            "handshake",
+            Handshake(
+                self._network_id,
+                protocol_version,
+                self._node_id,
+                uint16(self._port),
+                self._local_type,
+            ),
+        )
+        connection_handshake_aiter = map_aiter(
+            lambda _: (_, outbound_handshake), connections_aiter)
+
         # Performs a handshake with the peer
         handshaked_connections_aiter = join_aiters(
-            map_aiter(self.perform_handshake, connections_aiter)
+            map_aiter(self.perform_handshake, connection_handshake_aiter)
         )
         forker = aiter_forker(handshaked_connections_aiter)
         handshake_finished_1 = forker.fork(is_active=True)
@@ -332,25 +346,16 @@ class ChiaServer:
                     yield connection, outbound_message
 
     async def perform_handshake(
-        self, connection: Connection
+        self,
+        pair: Tuple[Connection, Message],
     ) -> AsyncGenerator[Connection, None]:
         """
         Performs handshake with this new connection, and yields the connection. If the handshake
         is unsuccessful, or we already have a connection with this peer, the connection is closed,
         and nothing is yielded.
         """
+        connection, outbound_handshake = pair
         # Send handshake message
-        outbound_handshake = Message(
-            "handshake",
-            Handshake(
-                self._network_id,
-                protocol_version,
-                self._node_id,
-                uint16(self._port),
-                self._local_type,
-            ),
-        )
-
         try:
             await connection.send(outbound_handshake)
 
