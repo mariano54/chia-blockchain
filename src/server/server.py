@@ -338,6 +338,7 @@ class ChiaServer:
         """
         Expands each of the outbound messages into it's own message.
         """
+        global_connections = self.global_connections
         connection, outbound_message = pair
 
         if connection and outbound_message.delivery_method == Delivery.RESPOND:
@@ -349,7 +350,7 @@ class ChiaServer:
             to_yield_single: Tuple[Connection, Message]
             typed_peers: List[Connection] = [
                 peer
-                for peer in self.global_connections.get_connections()
+                for peer in global_connections.get_connections()
                 if peer.connection_type == outbound_message.peer_type
             ]
             if len(typed_peers) == 0:
@@ -360,7 +361,7 @@ class ChiaServer:
             or outbound_message.delivery_method == Delivery.BROADCAST_TO_OTHERS
         ):
             # Broadcast to all peers.
-            for peer in self.global_connections.get_connections():
+            for peer in global_connections.get_connections():
                 if peer.connection_type == outbound_message.peer_type:
                     if peer == connection:
                         if outbound_message.delivery_method == Delivery.BROADCAST:
@@ -372,7 +373,7 @@ class ChiaServer:
             # Send to a specific peer, by node_id, assuming the NodeType matches.
             if outbound_message.specific_peer_node_id is None:
                 return
-            for peer in self.global_connections.get_connections():
+            for peer in global_connections.get_connections():
                 if (
                     peer.connection_type == outbound_message.peer_type
                     and peer.node_id == outbound_message.specific_peer_node_id
@@ -385,7 +386,7 @@ class ChiaServer:
                 if connection.connection_type == outbound_message.peer_type:
                     yield (connection, None)
             else:
-                for peer in self.global_connections.get_connections():
+                for peer in global_connections.get_connections():
                     # Close the connection with the specific peer
                     if (
                         peer.connection_type == outbound_message.peer_type
