@@ -329,7 +329,7 @@ class ChiaServer:
         )
 
         def add_connections(_):
-            return tuple(list(_) + [self.global_connections])
+            return tuple(list(_) + [global_connections])
 
         responses_plus_connections_aiter = map_aiter(add_connections, responses_aiter)
 
