@@ -66,7 +66,18 @@ class ChiaServer:
 
         # Tasks for entire server pipeline
         self._pipeline_task: asyncio.Future = asyncio.ensure_future(
-            self.initialize_pipeline(self._srwt_aiter, self._api, self._port)
+            self.initialize_pipeline(
+                self._srwt_aiter,
+                self._api,
+                self._port,
+                self._network_id,
+                self._node_id,
+                self._local_type,
+                self._srwt_aiter,
+                self._outbound_aiter,
+                self._on_inbound_connect,
+                self.global_connections,
+            )
         )
 
         self._ssl_context_client = ssl_context_client
@@ -222,20 +233,30 @@ class ChiaServer:
         return asyncio.create_task(ping())
 
     async def initialize_pipeline(
-        self, aiter, api: Any, server_port: int
+        self,
+        aiter: push_aiter,
+        api: Any,
+        server_port: int,
+        network_id: str,
+        node_id: bytes32,
+        local_type: NodeType,
+        srwt_aiter: push_aiter,
+        outbound_aiter: push_aiter,
+        on_inbound_connect: OnConnectFunc,
+        global_connections: PeerConnections,
     ):
         """
         A pipeline that starts with (StreamReader, StreamWriter), maps it though to
         connections, messages, executes a local API call, and returns responses.
         """
 
-        global_connections = self.global_connections
-        network_id = self._network_id
-        node_id = self._node_id
-        local_type = self._local_type
-        srwt_aiter = self._srwt_aiter
-        outbound_aiter = self._outbound_aiter
-        on_inbound_connect = self._on_inbound_connect
+        assert global_connections == self.global_connections
+        assert network_id == self._network_id
+        assert node_id == self._node_id
+        assert local_type == self._local_type
+        assert srwt_aiter == self._srwt_aiter
+        assert outbound_aiter == self._outbound_aiter
+        assert on_inbound_connect == self._on_inbound_connect
 
         # Maps a stream reader, writer and NodeType to a Connection object
         connections_aiter = map_aiter(
