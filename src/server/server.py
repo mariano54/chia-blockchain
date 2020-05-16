@@ -319,15 +319,15 @@ class ChiaServer:
                 global_connections.close(connection, True)
                 continue
             if connection.is_closing():
-                self.log.info(
+                connection.log.info(
                     f"Closing, so will not send {message.function} to peer {connection.get_peername()}"
                 )
                 continue
-            self.log.info(f"-> {message.function} to peer {connection.get_peername()}")
+            connection.log.info(f"-> {message.function} to peer {connection.get_peername()}")
             try:
                 await connection.send(message)
             except (RuntimeError, TimeoutError, OSError,) as e:
-                self.log.warning(
+                connection.log.warning(
                     f"Cannot write to {connection}, already closed. Error {e}."
                 )
                 global_connections.close(connection, True)
