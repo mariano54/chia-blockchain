@@ -235,6 +235,7 @@ class ChiaServer:
         local_type = self._local_type
         srwt_aiter = self._srwt_aiter
         outbound_aiter = self._outbound_aiter
+        on_inbound_connect = self._on_inbound_connect
 
         # Maps a stream reader, writer and NodeType to a Connection object
         connections_aiter = map_aiter(
@@ -285,7 +286,7 @@ class ChiaServer:
             """
             Async generator which calls the on_connect async generator method, and yields any outbound messages.
             """
-            for func in connection.on_connect, self._on_inbound_connect:
+            for func in connection.on_connect, on_inbound_connect:
                 if func:
                     async for outbound_message in func():
                         yield connection, outbound_message
