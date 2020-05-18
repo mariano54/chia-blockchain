@@ -16,23 +16,27 @@ from src.util.setproctitle import setproctitle
 
 
 async def async_start_service(
-    root_path,
-    proctitle_name,
-    config_path,
     api,
-    node_type: NodeType,
-    signal_callback,
+    service_type,
+    root_path,
+    signal_callback=None,
+    service_name=None,
 ):
+    if service_name is None:
+        service_name = service_type
     net_config = load_config(root_path, "config.yaml")
     ping_interval = net_config.get("ping_interval")
     network_id = net_config.get("network_id")
     assert ping_interval is not None
     assert network_id is not None
 
-    setproctitle(proctitle_name)
-    log = logging.getLogger(proctitle_name)
+    node_type = getattr(NodeType, service_name.upper())
 
-    config = load_config_cli(root_path, "config.yaml", config_path)
+    proctitle_name = f"chia_{service_name}"
+    setproctitle(proctitle_name)
+    log = logging.getLogger(service_name)
+
+    config = load_config_cli(root_path, "config.yaml", service_name)
     initialize_logging("FullNode %(name)-23s", config["logging"], root_path)
 
     server = ChiaServer(
@@ -44,7 +48,9 @@ async def async_start_service(
         root_path,
         config,
     )
-    api._set_server(server)
+    if hasattr(api, "_set_server"):
+        api._set_server(server)
+
     _ = await server.start_server(api._on_connect)
 
     server_closed = False

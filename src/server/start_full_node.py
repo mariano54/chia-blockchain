@@ -8,7 +8,6 @@ except ImportError:
 
 from src.full_node.full_node import FullNode
 from src.rpc.rpc_server import start_rpc_server
-from src.server.connection import NodeType
 from src.util.config import load_config_cli
 from src.util.default_root import DEFAULT_ROOT_PATH
 
@@ -19,29 +18,27 @@ log = logging.getLogger(__name__)
 
 
 async def async_main():
+    service_type = "full_node"
     root_path = DEFAULT_ROOT_PATH
-    config = load_config_cli(root_path, "config.yaml", "full_node")
+    config = load_config_cli(root_path, "config.yaml", service_type)
 
-    full_node = await FullNode.create(config, root_path=root_path)
+    api = await FullNode.create(config, root_path=root_path)
 
     def master_close_cb():
         # Called by the UI, when node is closed, or when a signal is sent
         log.info("Closing all connections, and server...")
-        full_node._close()
+        api._close()
 
     if config["start_rpc_server"]:
         # Starts the RPC server
         rpc_cleanup = await start_rpc_server(
-            full_node, master_close_cb, config["rpc_port"]
+            api, master_close_cb, config["rpc_port"]
         )
 
-    full_node = await FullNode.create(config, root_path=root_path)
     await async_start_service(
+        api,
+        service_type,
         DEFAULT_ROOT_PATH,
-        "chia_full_node",
-        "full_node",
-        full_node,
-        NodeType.FULL_NODE,
         signal_callback=master_close_cb,
     )
 
