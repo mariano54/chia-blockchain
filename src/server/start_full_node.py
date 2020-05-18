@@ -38,7 +38,6 @@ async def async_main():
     await async_start_service(
         api,
         service_type,
-        DEFAULT_ROOT_PATH,
         signal_callback=master_close_cb,
     )
 

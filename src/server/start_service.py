@@ -12,13 +12,14 @@ from src.server.server import ChiaServer
 from src.server.connection import NodeType
 from src.util.logging import initialize_logging
 from src.util.config import load_config_cli, load_config
+from src.util.default_root import DEFAULT_ROOT_PATH
 from src.util.setproctitle import setproctitle
 
 
 async def async_start_service(
     api,
     service_type,
-    root_path,
+    root_path=DEFAULT_ROOT_PATH,
     signal_callback=None,
     service_name=None,
 ):
@@ -51,7 +52,7 @@ async def async_start_service(
     if hasattr(api, "_set_server"):
         api._set_server(server)
 
-    _ = await server.start_server(api._on_connect)
+    _ = await server.start_server(getattr(api, "_on_connect", None))
 
     server_closed = False
 
@@ -69,7 +70,9 @@ async def async_start_service(
     except NotImplementedError:
         log.info("signal handlers unsupported")
 
-    api._start_bg_tasks()
+    f = getattr(api, "_start_bg_tasks", None)
+    if f:
+        f()
 
     # Awaits for server and all connections to close
     await server.await_closed()
