@@ -9,7 +9,7 @@ except ImportError:
 
 from src.harvester import Harvester
 from src.server.outbound_message import NodeType
-from src.server.server import ChiaServer
+from src.server.server import ChiaServer, start_client
 from src.types.peer_info import PeerInfo
 from src.util.config import load_config, load_config_cli
 from src.util.default_root import DEFAULT_ROOT_PATH
@@ -34,9 +34,7 @@ def start_harvester_bg_task(server, peer_info, log):
 
             if farmer_retry:
                 log.info(f"Reconnecting to farmer {farmer_retry}")
-                if not await server.start_client(
-                    peer_info, None, auth=True
-                ):
+                if not await start_client(server, peer_info, auth=True):
                     await asyncio.sleep(1)
             await asyncio.sleep(1)
 

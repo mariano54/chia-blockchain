@@ -21,7 +21,7 @@ except ImportError:
     uvloop = None
 
 from src.server.outbound_message import NodeType, OutboundMessage, Message, Delivery
-from src.server.server import ChiaServer
+from src.server.server import ChiaServer, start_client
 from src.simulator.simulator_constants import test_constants
 from src.simulator.simulator_protocol import FarmNewBlockProtocol
 from src.util.config import load_config_cli, load_config
@@ -627,7 +627,7 @@ async def start_websocket_server():
 
         log.info(f"Connecting to full node peer at {full_node_peer}")
         server.global_connections.peers.add(full_node_peer)
-        _ = await server.start_client(full_node_peer, None)
+        _ = await start_client(server, full_node_peer, None)
 
     log.info("Starting websocket server.")
     websocket_server = await websockets.serve(

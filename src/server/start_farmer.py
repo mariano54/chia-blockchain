@@ -9,7 +9,7 @@ except ImportError:
 
 from src.farmer import Farmer
 from src.server.outbound_message import NodeType
-from src.server.server import ChiaServer
+from src.server.server import ChiaServer, start_server, start_client
 from src.types.peer_info import PeerInfo
 from src.util.config import load_config, load_config_cli
 from src.util.default_root import DEFAULT_ROOT_PATH
@@ -34,7 +34,7 @@ def start_farmer_bg_task(server, peer_info, log):
 
                 if full_node_retry:
                     log.info(f"Reconnecting to full_node {peer_info}")
-                    if not await server.start_client(peer_info, None, auth=False):
+                    if not await start_client(server, peer_info, auth=False):
                         await asyncio.sleep(1)
             await asyncio.sleep(30)
 
@@ -77,7 +77,7 @@ async def async_main():
     except NotImplementedError:
         log.info("signal handlers unsupported")
 
-    _ = await server.start_server(farmer._on_connect)
+    _ = await start_server(server, farmer._on_connect)
 
     await asyncio.sleep(10)  # Allows full node to startup
 

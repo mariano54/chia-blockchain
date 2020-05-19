@@ -6,6 +6,7 @@ from typing import Any, Callable, List, Optional
 from aiohttp import web
 
 from src.full_node.full_node import FullNode
+from src.server.server import start_client
 from src.types.header import Header
 from src.types.full_block import FullBlock
 from src.types.peer_info import PeerInfo
@@ -258,7 +259,7 @@ class RpcApiHandler:
         target_node: PeerInfo = PeerInfo(host, uint16(int(port)))
 
         if self.full_node.server is None or not (
-            await self.full_node.server.start_client(target_node, None)
+            await start_client(self.full_node.server, target_node)
         ):
             raise web.HTTPInternalServerError()
         return obj_to_response("")

@@ -18,7 +18,7 @@ from src.util.merkle_set import (
 from src.protocols import introducer_protocol, wallet_protocol
 from src.consensus.constants import constants as consensus_constants
 from src.server.connection import PeerConnections
-from src.server.server import ChiaServer
+from src.server.server import ChiaServer, start_client
 from src.server.outbound_message import OutboundMessage, NodeType, Message, Delivery
 from src.util.ints import uint32, uint64
 from src.types.sized_bytes import bytes32
@@ -203,8 +203,8 @@ class WalletNode:
                     if connection.connection_type == NodeType.INTRODUCER:
                         self.global_connections.close(connection)
                 if self._num_needed_peers():
-                    if not await self.server.start_client(
-                        introducer_peerinfo, on_connect
+                    if not await start_client(
+                        self.server, introducer_peerinfo, on_connect
                     ):
                         await asyncio.sleep(5)
                         continue
@@ -275,7 +275,7 @@ class WalletNode:
         tasks = []
         for peer in to_connect:
             tasks.append(
-                asyncio.create_task(self.server.start_client(peer, self._on_connect))
+                asyncio.create_task(start_client(self.server, peer, self._on_connect))
             )
         await asyncio.gather(*tasks)
 

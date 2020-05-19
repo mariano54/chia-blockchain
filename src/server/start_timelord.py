@@ -11,7 +11,7 @@ except ImportError:
     uvloop = None
 
 from src.server.outbound_message import NodeType
-from src.server.server import ChiaServer
+from src.server.server import ChiaServer, start_client
 from src.timelord import Timelord
 from src.types.peer_info import PeerInfo
 from src.util.config import load_config_cli, load_config
@@ -36,7 +36,7 @@ def start_timelord_bg_task(server, peer_info, log):
 
                 if full_node_retry:
                     log.info(f"Reconnecting to full_node {peer_info}")
-                    if not await server.start_client(peer_info, None, auth=False):
+                    if not await start_client(server, peer_info, auth=False):
                         await asyncio.sleep(1)
             await asyncio.sleep(30)
 

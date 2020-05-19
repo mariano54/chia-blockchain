@@ -32,7 +32,7 @@ from src.protocols import (
 from src.protocols.wallet_protocol import GeneratorResponse
 from src.server.connection import PeerConnections
 from src.server.outbound_message import Delivery, Message, NodeType, OutboundMessage
-from src.server.server import ChiaServer
+from src.server.server import ChiaServer, start_client
 from src.types.BLSSignature import BLSSignature
 from src.types.challenge import Challenge
 from src.types.coin import Coin, hash_coin_list
@@ -1650,7 +1650,7 @@ class FullNode:
 
         self.log.info(f"Trying to connect to peers: {to_connect}")
         for peer in to_connect:
-            asyncio.create_task(self.server.start_client(peer, None))
+            asyncio.create_task(start_client(self.server, peer))
 
     @api_request
     async def request_mempool_transactions(
