@@ -221,7 +221,6 @@ async def setup_harvester(port, dic={}):
         f"harvester_server_{port}",
     )
 
-    harvester.set_server(server)
     yield (harvester, server)
 
     server.close_all()
@@ -347,7 +346,6 @@ async def setup_timelord(port, dic={}):
 
     vdf_server = asyncio.ensure_future(coro)
 
-    timelord.set_server(server)
     timelord._start_bg_tasks()
 
     async def run_timelord():
