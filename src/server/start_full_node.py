@@ -12,7 +12,7 @@ except ImportError:
     uvloop = None
 
 from src.full_node.full_node import FullNode
-from src.protocols import introducer_protocol, full_node_protocol
+from src.protocols import introducer_protocol
 from src.rpc.rpc_server import start_rpc_server
 from src.server.server import ChiaServer
 from src.server.outbound_message import Delivery, Message, NodeType, OutboundMessage
