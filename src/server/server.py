@@ -19,6 +19,19 @@ from src.util.network import create_node_id
 from .pipeline import initialize_pipeline
 
 
+def loadSSLConfig(self: "ChiaServer", tipo: str, path: Path, config: Dict):
+    if config is not None:
+        try:
+            return (
+                config_path_for_filename(path, config[tipo]["crt"]),
+                config_path_for_filename(path, config[tipo]["key"]),
+            )
+        except Exception:
+            pass
+
+    return None, None
+
+
 async def start_server(self: "ChiaServer", on_connect: OnConnectFunc = None) -> bool:
     """
     Launches a listening server on host and port specified, to connect to NodeType nodes. On each
@@ -29,8 +42,8 @@ async def start_server(self: "ChiaServer", on_connect: OnConnectFunc = None) -> 
         return False
 
     ssl_context = ssl._create_unverified_context(purpose=ssl.Purpose.CLIENT_AUTH)
-    private_cert, private_key = self.loadSSLConfig(
-        "ssl", self.root_path, self.config
+    private_cert, private_key = loadSSLConfig(
+        self, "ssl", self.root_path, self.config
     )
     ssl_context.load_cert_chain(certfile=private_cert, keyfile=private_key)
     ssl_context.load_verify_locations(private_cert)
@@ -87,8 +100,8 @@ async def start_client(
         return False
 
     ssl_context = ssl._create_unverified_context(purpose=ssl.Purpose.SERVER_AUTH)
-    private_cert, private_key = self.loadSSLConfig(
-        "ssl", self.root_path, self.config
+    private_cert, private_key = loadSSLConfig(
+        self, "ssl", self.root_path, self.config
     )
 
     ssl_context.load_cert_chain(certfile=private_cert, keyfile=private_key)
@@ -185,18 +198,6 @@ class ChiaServer:
 
         self.root_path = root_path
         self.config = config
-
-    def loadSSLConfig(self, tipo: str, path: Path, config: Dict):
-        if config is not None:
-            try:
-                return (
-                    config_path_for_filename(path, config[tipo]["crt"]),
-                    config_path_for_filename(path, config[tipo]["key"]),
-                )
-            except Exception:
-                pass
-
-        return None, None
 
     async def _add_to_srwt_aiter(
         self,
