@@ -71,7 +71,8 @@ async def start_server(self: "ChiaServer", on_connect: OnConnectFunc = None) -> 
     srwt_aiter = map_aiter(add_connection_type, aiter)
 
     # Push all aiters that come from the server, into the pipeline
-    self._tasks.append(asyncio.create_task(self._add_to_srwt_aiter(srwt_aiter)))
+    if not self._srwt_aiter.is_stopped():
+        self._srwt_aiter.push(srwt_aiter)
 
     self.log.info(f"Server started on port {self._port}")
     return True
@@ -126,11 +127,8 @@ async def start_client(
         )
         self.global_connections.peers.remove(target_node)
         return False
-    self._tasks.append(
-        asyncio.create_task(
-            self._add_to_srwt_aiter(iter_to_aiter([(reader, writer, on_connect)]))
-        )
-    )
+    if not self._srwt_aiter.is_stopped():
+        self._srwt_aiter.push(iter_to_aiter([(reader, writer, on_connect)]))
 
     ssl_object = writer.get_extra_info(name="ssl_object")
     peer_cert = ssl_object.getpeercert()
@@ -198,19 +196,6 @@ class ChiaServer:
 
         self.root_path = root_path
         self.config = config
-
-    async def _add_to_srwt_aiter(
-        self,
-        aiter: AsyncGenerator[
-            Tuple[asyncio.StreamReader, asyncio.StreamWriter, OnConnectFunc], None
-        ],
-    ):
-        """
-        Adds all swrt from aiter into the instance variable srwt_aiter, adding them to the pipeline.
-        """
-        async for swrt in aiter:
-            if not self._srwt_aiter.is_stopped():
-                self._srwt_aiter.push(swrt)
 
     async def await_closed(self):
         """
