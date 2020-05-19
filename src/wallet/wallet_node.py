@@ -15,7 +15,7 @@ from src.util.merkle_set import (
     confirm_not_included_already_hashed,
     MerkleSet,
 )
-from src.protocols import introducer_protocol, wallet_protocol, full_node_protocol
+from src.protocols import introducer_protocol, wallet_protocol
 from src.consensus.constants import constants as consensus_constants
 from src.server.connection import PeerConnections
 from src.server.server import ChiaServer
