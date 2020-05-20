@@ -71,23 +71,29 @@ async def async_main():
         config,
     )
 
-    try:
-        asyncio.get_running_loop().add_signal_handler(signal.SIGINT, server.close_all)
-        asyncio.get_running_loop().add_signal_handler(signal.SIGTERM, server.close_all)
-    except NotImplementedError:
-        log.info("signal handlers unsupported")
-
-    _ = await start_server(server, farmer._on_connect)
-
-    await asyncio.sleep(10)  # Allows full node to startup
-
     peer_info = PeerInfo(
         config["full_node_peer"]["host"], config["full_node_peer"]["port"]
     )
+
+    server_socket = await start_server(server, farmer._on_connect)
     farmer_bg_task = start_farmer_bg_task(server, peer_info, log)
 
+    def stop_all():
+        server_socket.close()
+        server.close_all()
+        farmer_bg_task.cancel()
+
+    try:
+        asyncio.get_running_loop().add_signal_handler(signal.SIGINT, stop_all)
+        asyncio.get_running_loop().add_signal_handler(signal.SIGTERM, stop_all)
+    except NotImplementedError:
+        log.info("signal handlers unsupported")
+
+    await asyncio.sleep(10)  # Allows full node to startup
+
+    await server_socket.wait_closed()
     await server.await_closed()
-    farmer_bg_task.cancel()
+
     log.info("Farmer fully closed.")
 
 

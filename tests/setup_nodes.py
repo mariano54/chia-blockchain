@@ -95,6 +95,7 @@ async def setup_full_node_simulator(db_name, port, introducer_port=None, dic={})
     yield (full_node_1, server_1)
 
     # TEARDOWN
+    _.close()
     server_1.close_all()
     full_node_1._close()
     await server_1.await_closed()
@@ -146,6 +147,7 @@ async def setup_full_node(db_name, port, introducer_port=None, dic={}):
     yield (full_node_1, server_1)
 
     # TEARDOWN
+    _.close()
     server_1.close_all()
     full_node_1._close()
     await server_1.await_closed()
@@ -273,6 +275,7 @@ async def setup_farmer(port, dic={}):
 
     yield (farmer, server)
 
+    _.close()
     server.close_all()
     await server.await_closed()
 
@@ -301,6 +304,7 @@ async def setup_introducer(port, dic={}):
 
     yield (introducer, server)
 
+    _.close()
     server.close_all()
     await server.await_closed()
 
