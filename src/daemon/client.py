@@ -64,7 +64,7 @@ async def connect_to_daemon(root_path, use_unix_socket):
     Connect to the local daemon.
     """
     url, unix_socket_path = uri_info_for_start_daemon(
-        root_path, should_use_unix_socket()
+        root_path, use_unix_socket
     )
     ws = WebsocketRemote(url)
     await ws.start()
@@ -81,7 +81,7 @@ async def connect_to_daemon_and_validate(root_path):
     there and running.
     """
     try:
-        connection = await connect_to_daemon(root_path, should_use_unix_socket)
+        connection = await connect_to_daemon(root_path, should_use_unix_socket())
         r = await connection.ping()
 
         if r.startswith("pong"):
