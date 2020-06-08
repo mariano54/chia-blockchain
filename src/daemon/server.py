@@ -29,6 +29,8 @@ from src.util.logging import initialize_logging
 from src.util.path import mkdir
 from src.util.service_groups import validate_service
 
+from .singleton import singleton
+
 log = logging.getLogger(__name__)
 
 # determine if application is a script file or frozen exe
@@ -508,29 +510,6 @@ def create_server_for_daemon(root_path):
 
         # we can't await `site.stop()` here because that will cause a deadlock, waiting for this
         # request to exit
-
-
-def singleton(lockfile, text="semaphore"):
-    """
-    Open a lockfile exclusively.
-    """
-
-    if not lockfile.parent.exists():
-        mkdir(lockfile.parent)
-
-    try:
-        if has_fcntl:
-            f = open(lockfile, "w")
-            fcntl.lockf(f, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        else:
-            if lockfile.exists():
-                lockfile.unlink()
-            fd = os.open(lockfile, os.O_CREAT | os.O_EXCL | os.O_RDWR)
-            f = open(fd, "w")
-        f.write(text)
-    except IOError:
-        return None
-    return f
 
 
 async def async_run_daemon(root_path):
