@@ -30,27 +30,26 @@ def daemon_launch_lock_path(root_path):
     return root_path / "run" / "start-daemon.launching"
 
 
-def create_server_for_daemon(root_path, ws_callback):
+def create_routes_for_ws_obj_server(ws_uri, ws_callback):
     routes = web.RouteTableDef()
 
-    @routes.get("/ws/")
+    @routes.get(ws_uri)
     async def ws_request(request):
         ws = web.WebSocketResponse()
         await ws.prepare(request)
         await ws_callback(ws)
         return ws
 
-    app = web.Application()
-    app.add_routes(routes)
-    return app
+    return routes
 
 
-async def create_site_for_daemon(runner, path, start_port):
-    if should_use_unix_socket():
-        site = web.UnixSite(runner, path)
-        await site.start()
-        return site, path
+async def create_unix_site(runner, path):
+    site = web.UnixSite(runner, path)
+    await site.start()
+    return site, path
 
+
+async def create_tcp_site(runner, path, start_port):
     port = start_port
     while port < 65536:
         host = "127.0.0.1"
@@ -67,30 +66,26 @@ async def create_site_for_daemon(runner, path, start_port):
     return site, port
 
 
-async def async_run_daemon(root_path):
-    chia_init(root_path)
-    config = load_config(root_path, "config.yaml")
-    initialize_logging("daemon %(name)-25s", config["logging"], root_path)
+async def create_site_for_daemon(runner, path, start_port):
+    if should_use_unix_socket():
+        return await create_unix_site(runner, path)
 
-    daemon_api = DaemonAPI(root_path)
+    return await create_tcp_site(runner, path, start_port)
+
+
+async def create_object_server(obj, root_path):
 
     async def ws_callback(ws):
         rpc_stream = rpc_stream_for_websocket_aiohttp(ws)
-        rpc_stream.register_local_obj(daemon_api, 0)
+        rpc_stream.register_local_obj(obj, 0)
         rpc_stream.start()
         await rpc_stream.await_closed()
 
-    connection = await connect_to_daemon_and_validate(root_path)
-    if connection is not None:
-        print("daemon: already running")
-        return 1
+    routes = create_routes_for_ws_obj_server("/ws/", ws_callback)
 
-    lockfile = singleton(daemon_launch_lock_path(root_path))
-    if lockfile is None:
-        print("daemon: already launching")
-        return 2
+    app = web.Application()
+    app.add_routes(routes)
 
-    app = create_server_for_daemon(root_path, ws_callback)
     runner = web.AppRunner(app)
     await runner.setup()
 
@@ -102,6 +97,29 @@ async def async_run_daemon(root_path):
     site, where = await create_site_for_daemon(runner, path, 55400)
 
     app["site"] = site
+
+    return site, where
+
+
+async def async_run_daemon(root_path):
+    chia_init(root_path)
+    config = load_config(root_path, "config.yaml")
+    initialize_logging("daemon %(name)-25s", config["logging"], root_path)
+
+    connection = await connect_to_daemon_and_validate(root_path)
+    if connection is not None:
+        print("daemon: already running")
+        return 1
+
+    daemon_api = DaemonAPI(root_path)
+
+    lockfile = singleton(daemon_launch_lock_path(root_path))
+    if lockfile is None:
+        print("daemon: already launching")
+        return 2
+
+    site, where = await create_object_server(daemon_api, root_path)
+
     lockfile.close()
 
     daemon_api.set_exit_callback(site.stop)
