@@ -1,15 +1,13 @@
 import asyncio
 import logging
 
-from aiohttp import web
-
 from src.cmds.init import chia_init
 
 from src.util.config import load_config
 from src.util.logging import initialize_logging
 from src.util.path import mkdir
 
-from src.remote.json_packaging import rpc_stream_for_websocket_aiohttp
+from src.remote.server import create_object_server, create_tcp_site, create_unix_site
 
 from .client import (
     connect_to_daemon_and_validate,
@@ -30,77 +28,6 @@ def daemon_launch_lock_path(root_path):
     return root_path / "run" / "start-daemon.launching"
 
 
-def create_routes_for_ws_obj_server(ws_uri, ws_callback):
-    routes = web.RouteTableDef()
-
-    @routes.get(ws_uri)
-    async def ws_request(request):
-        ws = web.WebSocketResponse()
-        await ws.prepare(request)
-        await ws_callback(ws)
-        return ws
-
-    return routes
-
-
-async def create_unix_site(runner, path):
-    site = web.UnixSite(runner, path)
-    await site.start()
-    return site, path
-
-
-async def create_tcp_site(runner, path, start_port):
-    port = start_port
-    while port < 65536:
-        host = "127.0.0.1"
-        site = web.TCPSite(runner, port=port, host=host)
-        try:
-            await site.start()
-            with open(path, "w") as f:
-                f.write(f"{port}\n")
-            break
-        except IOError:
-            port += 1
-    else:
-        raise RuntimeError("couldn't find a port to listen on")
-    return site, port
-
-
-async def create_site_for_daemon(runner, path, start_port):
-    if should_use_unix_socket():
-        return await create_unix_site(runner, path)
-
-    return await create_tcp_site(runner, path, start_port)
-
-
-async def create_object_server(obj, root_path):
-
-    async def ws_callback(ws):
-        rpc_stream = rpc_stream_for_websocket_aiohttp(ws)
-        rpc_stream.register_local_obj(obj, 0)
-        rpc_stream.start()
-        await rpc_stream.await_closed()
-
-    routes = create_routes_for_ws_obj_server("/ws/", ws_callback)
-
-    app = web.Application()
-    app.add_routes(routes)
-
-    runner = web.AppRunner(app)
-    await runner.setup()
-
-    path = socket_server_path(root_path)
-    mkdir(path.parent)
-    if path.exists():
-        path.unlink()
-
-    site, where = await create_site_for_daemon(runner, path, 55400)
-
-    app["site"] = site
-
-    return site, where
-
-
 async def async_run_daemon(root_path):
     chia_init(root_path)
     config = load_config(root_path, "config.yaml")
@@ -118,7 +45,24 @@ async def async_run_daemon(root_path):
         print("daemon: already launching")
         return 2
 
-    site, where = await create_object_server(daemon_api, root_path)
+    path = socket_server_path(root_path)
+    mkdir(path.parent)
+    if path.exists():
+        path.unlink()
+
+    use_unix_socket = should_use_unix_socket() and 0
+
+    async def create_site_for_daemon(runner):
+        if use_unix_socket:
+            return await create_unix_site(runner, path)
+
+        return await create_tcp_site(runner, 55400)
+
+    site, where = await create_object_server(daemon_api, "/ws/", create_site_for_daemon)
+
+    if not use_unix_socket:
+        with open(path, "w") as f:
+            f.write(f"{where}\n")
 
     lockfile.close()
 
