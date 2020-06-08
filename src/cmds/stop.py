@@ -39,7 +39,6 @@ async def async_stop(args, parser):
 
     if args.daemon:
         r = await daemon.exit()
-        await daemon.close()
         print(f"daemon: {r}")
         return 0
 
@@ -55,7 +54,6 @@ async def async_stop(args, parser):
             print("stop failed")
             return_val = 1
 
-    await daemon.close()
     return return_val
 
 
