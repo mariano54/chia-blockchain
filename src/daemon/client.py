@@ -1,102 +1,78 @@
-import json
-from typing import Dict, Any
-
-import asyncio
 import websockets
 
-from src.types.sized_bytes import bytes32
-from src.util.ws_message import create_payload
-from src.util.json_util import dict_to_json_str
+from src.remote.json_packaging import rpc_stream_for_websocket
+
+from src.util.path import mkdir
+
+from .daemon_api import DaemonAPI
 
 
-class DaemonProxy:
+def should_use_unix_socket():
+    """
+    Use unix sockets unless they are not supported. Check `socket` to see.
+    """
+    import socket
+
+    return 0
+    return hasattr(socket, "AF_UNIX")
+
+
+def socket_server_path(root_path):
+    """
+    This is the file that's either the unix socket or a text file containing
+    the TCP socket information (ie. the port).
+    """
+    return root_path / "run" / "start-daemon.socket"
+
+
+def uri_info_for_start_daemon(root_path, use_unix_socket):
+    """
+    Return the URI prefix and the path to the socket file.
+    """
+    path = socket_server_path(root_path)
+    mkdir(path.parent)
+    try:
+        if use_unix_socket:
+            return f"ws://unix", str(path)
+        with open(path) as f:
+            port = int(f.readline())
+        return f"ws://127.0.0.1:{port}/ws/", None
+    except Exception:
+        pass
+
+    return None
+
+
+class WebsocketRemote:
     def __init__(self, uri):
         self._uri = uri
-        self._request_dict: Dict[bytes32, asyncio.Event] = {}
-        self.response_dict: Dict[bytes32, Any] = {}
-        self.websocket = None
-
-    def format_request(self, command, data=None):
-        request = create_payload(command, data, "client", "daemon", False)
-        return request
 
     async def start(self):
-        self.websocket = await websockets.connect(self._uri)
+        self._websocket = await websockets.connect(self._uri)
 
-        async def listener():
-            while True:
-                message = await self.websocket.recv()
-                decoded = json.loads(message)
-                id = decoded["request_id"]
+    async def __aiter__(self):
+        while True:
+            _ = await self._websocket.recv()
+            yield _
 
-                if id in self._request_dict:
-                    if id in self._request_dict:
-                        self.response_dict[id] = decoded
-                        self._request_dict[id].set()
-
-        asyncio.create_task(listener())
-        await asyncio.sleep(1)
-
-    async def _get(self, request):
-        request_id = request["request_id"]
-        self._request_dict[request_id] = asyncio.Event()
-        string = dict_to_json_str(request)
-        asyncio.ensure_future(self.websocket.send(string))
-
-        async def timeout():
-            await asyncio.sleep(30)
-            if request_id in self._request_dict:
-                print("Error, timeout.")
-                self._request_dict[request_id].set()
-
-        asyncio.ensure_future(timeout())
-        await self._request_dict[request_id].wait()
-        if request_id in self.response_dict:
-            response = self.response_dict[request_id]
-            self.response_dict.pop(request_id)
-        else:
-            response = None
-        self._request_dict.pop(request_id)
-
-        return response
-
-    async def start_service(self, service_name):
-        data = {"service": service_name}
-        request = self.format_request("start_service", data)
-        response = await self._get(request)
-        return response
-
-    async def stop_service(self, service_name, delay_before_kill=15):
-        data = {"service": service_name}
-        request = self.format_request("stop_service", data)
-        response = await self._get(request)
-        return response
-
-    async def is_running(self, service_name):
-        data = {"service": service_name}
-        request = self.format_request("is_running", data)
-        response = await self._get(request)
-        is_running = response["data"]["is_running"]
-        return is_running
-
-    async def ping(self):
-        request = self.format_request("ping")
-        response = await self._get(request)
-        return response
-
-    async def exit(self):
-        request = self.format_request("exit", {})
-        return await self._get(request)
+    async def push(self, msg):
+        await self._websocket.send(msg)
 
 
-async def connect_to_daemon():
+async def connect_to_daemon(root_path, use_unix_socket):
     """
     Connect to the local daemon.
     """
+    url, unix_socket_path = uri_info_for_start_daemon(
+        root_path, should_use_unix_socket()
+    )
+    ws = WebsocketRemote(url)
+    await ws.start()
+    rpc_stream = rpc_stream_for_websocket(ws)
+    daemon_api = rpc_stream.remote_obj(DaemonAPI, 0)
+    rpc_stream.start()
 
-    client = DaemonProxy("ws://127.0.0.1:55400")
-    await client.start()
-    return client
+    return daemon_api
 
 
 async def connect_to_daemon_and_validate(root_path):
@@ -105,10 +81,10 @@ async def connect_to_daemon_and_validate(root_path):
     there and running.
     """
     try:
-        connection = await connect_to_daemon()
+        connection = await connect_to_daemon(root_path, should_use_unix_socket)
         r = await connection.ping()
 
-        if r["data"]["value"] == "pong":
+        if r.startswith("pong"):
             return connection
     except Exception as ex:
         # ConnectionRefusedError means that daemon is not yet running
