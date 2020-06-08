@@ -44,6 +44,10 @@ async def create_tcp_site(runner, start_port, last_port=None):
 
 
 async def create_object_server(obj, ws_uri, create_site_callback):
+    """
+    `create_site_callback` is an async callback that takes `runner`. It should
+    probably just use one of `create_unix_site` or `create_tcp_site`.
+    """
 
     async def ws_callback(ws):
         rpc_stream = rpc_stream_for_websocket_aiohttp(ws)
